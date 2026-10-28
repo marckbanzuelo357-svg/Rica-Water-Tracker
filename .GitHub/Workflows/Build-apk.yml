@@ -1,0 +1,72 @@
+name: Build Rica Water Tracker APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "*.zip"
+      - ".github/workflows/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find and extract project ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No project ZIP found in repository root"
+            exit 1
+          fi
+          mkdir -p extracted
+          unzip -o "$ZIP_FILE" -d extracted
+          PROJECT_DIR=$(find extracted -type f -name package.json -printf '%h\n' | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Could not find package.json in ZIP"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install
+
+      - name: Generate Android project
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap add android
+
+      - name: Sync app
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rica-Water-Tracker-APK
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
